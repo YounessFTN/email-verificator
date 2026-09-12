@@ -10,7 +10,13 @@ const EMAIL_REGEX =
 
 const SMTP_TIMEOUT_MS = 8000;
 const HELO_DOMAIN = process.env.SMTP_HELO_DOMAIN || "verifier.local";
-const MAIL_FROM = process.env.SMTP_MAIL_FROM || "probe@verifier.local";
+// Null reverse-path ("<>") is the standard SMTP sender for verification
+// probes (RFC 5321 §4.5.5). Using a made-up domain here instead gets
+// rejected by mail servers that check the sender domain actually exists
+// (e.g. Postfix's reject_unknown_sender_domain), producing false
+// "unknown" results. Set SMTP_MAIL_FROM to a real mailbox you control
+// only if a specific target server is known to reject the null sender.
+const MAIL_FROM = process.env.SMTP_MAIL_FROM || "";
 
 function randomLocalPart(): string {
   return "no-such-user-" + Math.random().toString(36).slice(2, 12);
