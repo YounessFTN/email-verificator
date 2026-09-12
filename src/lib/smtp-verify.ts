@@ -51,7 +51,19 @@ function readOneResponse(socket: net.Socket): Promise<{ code: number; message: s
 
 async function openSmtpSession(host: string): Promise<SmtpSession> {
   const socket = net.createConnection({ host, port: 25 });
+
+  // Idle timeout covers the whole session (connect + every subsequent
+  // command/response), resetting on any activity. Destroying with an
+  // error turns it into a normal 'error' event so callers can catch it.
   socket.setTimeout(SMTP_TIMEOUT_MS);
+  socket.on("timeout", () => {
+    socket.destroy(new Error(`Délai dépassé (${SMTP_TIMEOUT_MS}ms) en parlant à ${host}`));
+  });
+  // Safety net: guarantees at least one 'error' listener always exists,
+  // so a stray error after a stage-specific listener has been removed
+  // (e.g. the OS reporting ETIMEDOUT after our own timeout already fired)
+  // never crashes the process with an unhandled 'error' event.
+  socket.on("error", () => {});
 
   await new Promise<void>((resolve, reject) => {
     const onConnect = () => {
@@ -62,18 +74,12 @@ async function openSmtpSession(host: string): Promise<SmtpSession> {
       cleanup();
       reject(err);
     };
-    const onTimeout = () => {
-      cleanup();
-      reject(new Error("connect timeout"));
-    };
     const cleanup = () => {
       socket.off("connect", onConnect);
       socket.off("error", onErr);
-      socket.off("timeout", onTimeout);
     };
     socket.on("connect", onConnect);
     socket.on("error", onErr);
-    socket.on("timeout", onTimeout);
   });
 
   // consume the 220 greeting
